@@ -85,13 +85,16 @@ def has_face(path: Path, detectors: list) -> bool:
 
 def select_pages(frames: list[Path], work_dir: Path, identity: dict,
                  texture_threshold: float, duplicate_threshold: float,
-                 min_stable_frames: int, force: bool) -> list[Path]:
-    import cv2
+                 min_stable_frames: int, force: bool,
+                 use_face_detection: bool = True) -> list[Path]:
+    if use_face_detection:
+        import cv2
 
     state_path = work_dir / "去重进度.json"
     key = {"source": identity, "texture_threshold": texture_threshold,
            "duplicate_threshold": duplicate_threshold,
-           "min_stable_frames": min_stable_frames, "algorithm": 5}
+           "min_stable_frames": min_stable_frames,
+           "use_face_detection": use_face_detection, "algorithm": 6}
     if not force and state_path.is_file():
         try:
             state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -125,6 +128,42 @@ def select_pages(frames: list[Path], work_dir: Path, identity: dict,
         return []
 
     candidates = []
+    run_representatives = [(run, run[len(run) // 2]) for run in runs]
+
+    # If face detection is disabled, keep the rest of the lightweight slide
+    # heuristics and avoid importing/loading OpenCV's cascade classifiers here.
+    if not use_face_detection:
+        representatives = [chosen for _, chosen in run_representatives
+                           if texture(chosen) <= texture_threshold]
+        candidates.extend(representatives)
+    else:
+        candidates.extend(_face_filtered_candidates(
+            cv2, run_representatives, identity, texture_threshold))
+
+    pages = []
+    selected_signatures = []
+    for candidate in candidates:
+        current = signatures_by_path[candidate]
+        if selected_signatures:
+            mean, changed = difference(selected_signatures[-1], current)
+            if mean <= duplicate_threshold and changed <= .10:
+                # 渐进显示的文字、图线只保留最后的完整画面。
+                pages[-1], selected_signatures[-1] = candidate, current
+                continue
+        pages.append(candidate)
+        selected_signatures.append(current)
+
+    state = {"key": key, "pages": [path.name for path in pages],
+             "stable_runs": len(runs), "candidates": len(candidates)}
+    temporary = state_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(state_path)
+    return pages
+
+
+def _face_filtered_candidates(cv2, run_representatives: list[tuple[list[Path], Path]],
+                              identity: dict, texture_threshold: float) -> list[Path]:
+    candidates = []
     with tempfile.TemporaryDirectory(prefix="ppt_faces_") as temporary:
         detectors = []
         for name in ("haarcascade_frontalface_default.xml", "haarcascade_profileface.xml"):
@@ -138,7 +177,6 @@ def select_pages(frames: list[Path], work_dir: Path, identity: dict,
         cascade_sources = [Path(cv2.data.haarcascades) / name for name in
                            ("haarcascade_frontalface_default.xml", "haarcascade_profileface.xml")]
         worker_state = threading.local()
-        run_representatives = [(run, run[len(run) // 2]) for run in runs]
         # First locate the early course title frame with one detector pair.
         title = None
         for _, chosen in run_representatives:
@@ -171,22 +209,4 @@ def select_pages(frames: list[Path], work_dir: Path, identity: dict,
         if title is not None and title not in candidates:
             candidates.insert(0, title)
 
-    pages = []
-    selected_signatures = []
-    for candidate in candidates:
-        current = signatures_by_path[candidate]
-        if selected_signatures:
-            mean, changed = difference(selected_signatures[-1], current)
-            if mean <= duplicate_threshold and changed <= .10:
-                # 渐进显示的文字、图线只保留最后的完整画面。
-                pages[-1], selected_signatures[-1] = candidate, current
-                continue
-        pages.append(candidate)
-        selected_signatures.append(current)
-
-    state = {"key": key, "pages": [path.name for path in pages],
-             "stable_runs": len(runs), "candidates": len(candidates)}
-    temporary = state_path.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(state_path)
-    return pages
+    return candidates

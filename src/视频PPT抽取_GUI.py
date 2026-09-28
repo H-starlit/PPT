@@ -7,6 +7,7 @@ import os
 import queue
 import sys
 import threading
+import time
 import traceback
 import tkinter as tk
 from pathlib import Path
@@ -21,7 +22,8 @@ import extract_ppt_pdf as core
 
 
 VIDEO_TYPES = [("视频文件", "*.mp4 *.mov *.mkv *.avi *.m4v *.wmv"), ("所有文件", "*.*")]
-DEFAULT_SETTINGS = {"interval": "2", "texture": "9", "duplicate": "5", "stable": "2"}
+DEFAULT_SETTINGS = {"interval": "2", "texture": "9", "duplicate": "5", "stable": "2",
+                    "face_detection": True}
 
 
 def cache_for(video: Path, output_dir: Path) -> Path:
@@ -34,16 +36,17 @@ def extract_one(video: Path, output_dir: Path, settings: dict, progress=None) ->
     return core.process_video(video, settings["interval"], settings["texture"],
                               settings["duplicate"], settings["stable"], ffmpeg, False,
                               output_dir=output_dir,
-                              work_dir=cache_for(video, output_dir), progress=progress)
+                              work_dir=cache_for(video, output_dir), progress=progress,
+                              use_face_detection=settings["face_detection"])
 
 
 class ExtractorApp:
     def __init__(self) -> None:
         self.root = TkinterDnD.Tk()
         self.root.title("视频 PPT 抽取")
-        self.root.geometry("900x610")
-        self.root.minsize(680, 460)
-        self.root.configure(bg="#f4f6f9")
+        self.root.geometry("940x700")
+        self.root.minsize(720, 570)
+        self.root.configure(bg="#f3f6fa")
         self.paths: list[Path] = []
         self.rows: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
@@ -53,7 +56,10 @@ class ExtractorApp:
         self.texture = tk.StringVar(value=DEFAULT_SETTINGS["texture"])
         self.duplicate = tk.StringVar(value=DEFAULT_SETTINGS["duplicate"])
         self.stable = tk.StringVar(value=DEFAULT_SETTINGS["stable"])
+        self.face_detection = tk.BooleanVar(value=DEFAULT_SETTINGS["face_detection"])
         self.summary = tk.StringVar(value="拖入视频，或点击“添加视频”")
+        self.eta = tk.StringVar(value="")
+        self.progress_value = tk.DoubleVar(value=0)
         self._build()
         self.root.after(100, self._poll)
 
@@ -61,17 +67,21 @@ class ExtractorApp:
         style = ttk.Style(self.root)
         if "vista" in style.theme_names():
             style.theme_use("vista")
-        style.configure("Treeview", rowheight=28, font=("Microsoft YaHei UI", 10))
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 10, "bold"))
+        style.configure("Treeview", rowheight=30, font=("Microsoft YaHei UI", 10),
+                        background="#ffffff", fieldbackground="#ffffff", foreground="#25364a")
+        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 9, "bold"),
+                        background="#edf2f8", foreground="#43566d", padding=(8, 7))
+        style.configure("Horizontal.TProgressbar", troughcolor="#e3eaf2", background="#3978c5",
+                        bordercolor="#e3eaf2", lightcolor="#3978c5", darkcolor="#3978c5")
 
-        outer = tk.Frame(self.root, bg="#f4f6f9", padx=22, pady=18)
+        outer = tk.Frame(self.root, bg="#f3f6fa", padx=24, pady=20)
         outer.pack(fill="both", expand=True)
-        tk.Label(outer, text="视频 PPT 抽取", bg="#f4f6f9", fg="#1b304b",
-                 font=("Microsoft YaHei UI", 20, "bold")).pack(anchor="w")
-        tk.Label(outer, text="拖入多个视频，自动筛选 PPT 画面并为每个视频生成同名 PDF",
-                 bg="#f4f6f9", fg="#52657b", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(4, 15))
+        tk.Label(outer, text="视频 PPT 抽取", bg="#f3f6fa", fg="#1b304b",
+                 font=("Microsoft YaHei UI", 21, "bold")).pack(anchor="w")
+        tk.Label(outer, text="导入视频，自动筛选画面并分别生成 PDF",
+                 bg="#f3f6fa", fg="#65758a", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(3, 17))
 
-        buttons = tk.Frame(outer, bg="#f4f6f9")
+        buttons = tk.Frame(outer, bg="#f3f6fa")
         buttons.pack(fill="x", pady=(0, 10))
         self.add_button = ttk.Button(buttons, text="添加视频", command=self._choose_files)
         self.add_button.pack(side="left")
@@ -80,11 +90,11 @@ class ExtractorApp:
         self.clear_button = ttk.Button(buttons, text="清空列表", command=self._clear)
         self.clear_button.pack(side="left")
 
-        drop = tk.Frame(outer, bg="#e9f2fb", highlightbackground="#94bce8", highlightthickness=1)
-        drop.pack(fill="x", pady=(0, 12))
-        drop_label = tk.Label(drop, text="将视频文件拖到这里，也可以拖到下方列表",
-                              bg="#e9f2fb", fg="#255486", font=("Microsoft YaHei UI", 11),
-                              pady=14)
+        drop = tk.Frame(outer, bg="#eaf2fc", highlightbackground="#c4d8f1", highlightthickness=1)
+        drop.pack(fill="x", pady=(0, 10))
+        drop_label = tk.Label(drop, text="将视频拖到这里，或拖入下方列表",
+                              bg="#eaf2fc", fg="#315d91", font=("Microsoft YaHei UI", 10),
+                              pady=12)
         drop_label.pack(fill="x")
         for target in (drop, drop_label):
             target.drop_target_register(DND_FILES)
@@ -98,21 +108,26 @@ class ExtractorApp:
         self.table.column("name", width=220, minwidth=150)
         self.table.column("folder", width=390, minwidth=180)
         self.table.column("status", width=170, minwidth=110)
-        self.table.pack(fill="both", expand=True)
+        table_wrap = tk.Frame(outer, bg="#ffffff", highlightbackground="#dce4ee", highlightthickness=1)
+        table_wrap.pack(fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(table_wrap, orient="vertical", command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
+        self.table.pack(side="left", fill="both", expand=True, padx=(1, 0), pady=1)
+        scrollbar.pack(side="right", fill="y", pady=1)
         self.table.drop_target_register(DND_FILES)
         self.table.dnd_bind("<<Drop>>", self._drop)
 
-        output_row = tk.Frame(outer, bg="#f4f6f9")
+        output_row = tk.Frame(outer, bg="#f3f6fa")
         output_row.pack(fill="x", pady=(14, 5))
-        tk.Label(output_row, text="输出文件夹", bg="#f4f6f9", fg="#1b304b",
+        tk.Label(output_row, text="输出文件夹", bg="#f3f6fa", fg="#1b304b",
                  font=("Microsoft YaHei UI", 10)).pack(side="left")
         self.output_entry = ttk.Entry(output_row, textvariable=self.output)
         self.output_entry.pack(side="left", fill="x", expand=True, padx=10)
         self.folder_button = ttk.Button(output_row, text="选择", command=self._choose_output)
         self.folder_button.pack(side="left")
 
-        settings = ttk.LabelFrame(outer, text="识别参数（默认值适合当前视频）", padding=(10, 6))
-        settings.pack(fill="x", pady=(6, 0))
+        settings = ttk.LabelFrame(outer, text="识别设置", padding=(12, 9))
+        settings.pack(fill="x", pady=(9, 0))
         fields = [
             ("抽帧间隔（秒）", self.interval, "越小越容易保留短页面"),
             ("PPT 纹理阈值", self.texture, "越大越容易保留实拍画面"),
@@ -120,34 +135,46 @@ class ExtractorApp:
             ("最少稳定帧数", self.stable, "越大越少保留短暂画面"),
         ]
         for column, (label, variable, tip) in enumerate(fields):
-            cell = tk.Frame(settings, bg="#f4f6f9")
+            cell = tk.Frame(settings, bg="#f3f6fa")
             cell.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 8))
-            tk.Label(cell, text=label, bg="#f4f6f9", fg="#1b304b",
+            tk.Label(cell, text=label, bg="#f3f6fa", fg="#30445d",
                      font=("Microsoft YaHei UI", 9)).pack(anchor="w")
             entry = ttk.Entry(cell, textvariable=variable, width=8)
             entry.pack(anchor="w", pady=(3, 0))
-            tk.Label(cell, text=tip, bg="#f4f6f9", fg="#718096",
+            tk.Label(cell, text=tip, bg="#f3f6fa", fg="#7a899b",
                      font=("Microsoft YaHei UI", 8)).pack(anchor="w")
             settings.columnconfigure(column, weight=1)
-        ttk.Button(settings, text="恢复默认值", command=self._reset_settings).grid(
-            row=0, column=len(fields), rowspan=2, padx=(2, 0), sticky="e")
+        self.face_check = ttk.Checkbutton(settings, text="启用人脸识别（过滤有人像的画面）",
+                                          variable=self.face_detection)
+        self.face_check.grid(row=0, column=len(fields), columnspan=2,
+                             padx=(6, 4), pady=(2, 7), sticky="w")
+        self.reset_button = ttk.Button(settings, text="恢复默认值", command=self._reset_settings)
+        self.reset_button.grid(row=1, column=len(fields), columnspan=2,
+                               padx=(6, 4), sticky="w")
         self.setting_entries = [child for child in settings.winfo_children()]
 
-        bottom = tk.Frame(outer, bg="#f4f6f9")
-        bottom.pack(fill="x", pady=(13, 0))
+        bottom = tk.Frame(outer, bg="#f3f6fa")
+        bottom.pack(fill="x", pady=(13, 7))
         self.start_button = ttk.Button(bottom, text="开始提取", command=self._start)
         self.start_button.pack(side="left")
         ttk.Button(bottom, text="打开输出文件夹", command=self._open_output).pack(side="left", padx=9)
-        self.spinner = ttk.Progressbar(bottom, mode="indeterminate", length=130)
-        self.spinner.pack(side="left", padx=12)
-        tk.Label(bottom, textvariable=self.summary, bg="#f4f6f9", fg="#52657b",
+        tk.Label(bottom, textvariable=self.summary, bg="#f3f6fa", fg="#52657b",
                  font=("Microsoft YaHei UI", 9)).pack(side="right")
+
+        progress_row = tk.Frame(outer, bg="#f3f6fa")
+        progress_row.pack(fill="x")
+        self.progressbar = ttk.Progressbar(progress_row, mode="determinate", maximum=100,
+                                           variable=self.progress_value)
+        self.progressbar.pack(side="left", fill="x", expand=True, padx=(0, 14))
+        tk.Label(progress_row, textvariable=self.eta, bg="#f3f6fa", fg="#65758a",
+                 font=("Microsoft YaHei UI", 9), width=25, anchor="e").pack(side="right")
 
     def _reset_settings(self) -> None:
         self.interval.set(DEFAULT_SETTINGS["interval"])
         self.texture.set(DEFAULT_SETTINGS["texture"])
         self.duplicate.set(DEFAULT_SETTINGS["duplicate"])
         self.stable.set(DEFAULT_SETTINGS["stable"])
+        self.face_detection.set(DEFAULT_SETTINGS["face_detection"])
 
     def _add_paths(self, paths: list[str]) -> None:
         if self.running:
@@ -206,16 +233,13 @@ class ExtractorApp:
         self.running = value
         state = "disabled" if value else "normal"
         for widget in (self.add_button, self.remove_button, self.clear_button,
-                       self.folder_button, self.output_entry, self.start_button):
+                       self.folder_button, self.output_entry, self.start_button,
+                       self.face_check, self.reset_button):
             widget.configure(state=state)
         for cell in self.setting_entries:
             for widget in cell.winfo_children():
                 if isinstance(widget, ttk.Entry):
                     widget.configure(state=state)
-        if value:
-            self.spinner.start(12)
-        else:
-            self.spinner.stop()
 
     def _start(self) -> None:
         if not self.paths:
@@ -227,6 +251,7 @@ class ExtractorApp:
                 "texture": float(self.texture.get()),
                 "duplicate": float(self.duplicate.get()),
                 "stable": int(self.stable.get()),
+                "face_detection": self.face_detection.get(),
             }
             if settings["interval"] <= 0 or settings["texture"] <= 0 or settings["duplicate"] <= 0 or settings["stable"] < 2:
                 raise ValueError
@@ -244,25 +269,55 @@ class ExtractorApp:
             messagebox.showerror("无法创建输出文件夹", str(exc))
             return
         self._set_running(True)
+        self.progress_value.set(0)
+        self.eta.set("正在估算剩余时间…")
         self.summary.set(f"正在处理 1/{len(self.paths)}")
         threading.Thread(target=self._worker, args=(list(self.paths), output_dir, settings), daemon=True).start()
 
     def _worker(self, paths: list[Path], output_dir: Path, settings: dict) -> None:
         ok = 0
+        durations = []
         for index, path in enumerate(paths, 1):
+            started = time.monotonic()
+            average = sum(durations) / len(durations) if durations else 60.0
+            remaining = average * (len(paths) - index + 1)
+            self.events.put(("progress", index - 1, len(paths), remaining))
             self.events.put(("summary", f"正在处理 {index}/{len(paths)}"))
             self.events.put(("status", path, "处理中"))
+
+            def report_progress(message: str, current_path: Path = path,
+                                current_index: int = index,
+                                estimated_item_time: float = average) -> None:
+                self.events.put(("status", current_path, message))
+                phase = (0.25 if "抽帧" in message else
+                         0.72 if "筛选" in message else
+                         0.92 if "PDF" in message else None)
+                if phase is not None:
+                    completed_units = current_index - 1 + phase
+                    left = estimated_item_time * (len(paths) - current_index + 1 - phase)
+                    self.events.put(("progress", completed_units, len(paths), max(0, left)))
+
             try:
                 pages, result = extract_one(
                     path, output_dir, settings,
-                    progress=lambda message, p=path: self.events.put(("status", p, message)))
+                    progress=report_progress)
                 status = f"完成 · {pages} 页" if "已跳过" not in result else f"已有 PDF · {pages} 页"
                 self.events.put(("status", path, status))
                 ok += 1
             except Exception as exc:
                 self.events.put(("status", path, "失败"))
                 self.events.put(("error", f"{path.name}：{exc}"))
+            durations.append(time.monotonic() - started)
+            remaining = (sum(durations) / len(durations)) * (len(paths) - index)
+            self.events.put(("progress", index, len(paths), remaining))
         self.events.put(("done", ok, len(paths)))
+
+    @staticmethod
+    def _format_eta(seconds: float) -> str:
+        if seconds < 60:
+            return "预计剩余少于 1 分钟"
+        minutes = max(1, round(seconds / 60))
+        return f"预计剩余约 {minutes} 分钟"
 
     def _poll(self) -> None:
         try:
@@ -274,10 +329,16 @@ class ExtractorApp:
                         self.table.set(self.rows[path], "status", value)
                 elif event[0] == "summary":
                     self.summary.set(event[1])
+                elif event[0] == "progress":
+                    _, completed_units, total, remaining = event
+                    self.progress_value.set(completed_units / total * 100 if total else 0)
+                    self.eta.set(self._format_eta(remaining) if total else "")
                 elif event[0] == "error":
                     messagebox.showerror("提取失败", event[1])
                 elif event[0] == "done":
                     self._set_running(False)
+                    self.progress_value.set(100 if event[2] else 0)
+                    self.eta.set("处理完成")
                     self.summary.set(f"完成 {event[1]}/{event[2]} 个视频")
                     if event[1] == event[2]:
                         messagebox.showinfo("提取完成", f"已处理 {event[1]} 个视频。\nPDF 保存在：\n{self.output.get()}")
@@ -294,7 +355,8 @@ def main() -> int:
         video, output = Path(sys.argv[2]), Path(sys.argv[3])
         try:
             extract_one(video, output, {"interval": 2.0, "texture": 9.0,
-                                        "duplicate": 5.0, "stable": 2})
+                                        "duplicate": 5.0, "stable": 2,
+                                        "face_detection": True})
             return 0
         except Exception:
             output.mkdir(parents=True, exist_ok=True)

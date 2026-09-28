@@ -131,7 +131,8 @@ def process_video(video: Path, interval: float, texture_threshold: float,
                   duplicate_threshold: float, min_stable_frames: int,
                   ffmpeg: str, force: bool, *, output_dir: Path | None = None,
                   work_dir: Path | None = None,
-                  progress: Callable[[str], None] | None = None) -> tuple[int, str]:
+                  progress: Callable[[str], None] | None = None,
+                  use_face_detection: bool = True) -> tuple[int, str]:
     work_dir = work_dir or CACHE_DIR / video.name
     output_dir = output_dir or OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -143,7 +144,8 @@ def process_video(video: Path, interval: float, texture_threshold: float,
     completion = load_json(completion_path)
     key = {"source": identity, "texture_threshold": texture_threshold,
            "duplicate_threshold": duplicate_threshold,
-           "min_stable_frames": min_stable_frames, "algorithm": 6}
+           "min_stable_frames": min_stable_frames,
+           "use_face_detection": use_face_detection, "algorithm": 7}
     if not force and completion and completion.get("key") == key and pdf_path.is_file() and pdf_path.stat().st_size > 0:
         return int(completion["pages"]), "已跳过（PDF 已存在）"
 
@@ -153,7 +155,8 @@ def process_video(video: Path, interval: float, texture_threshold: float,
     if progress:
         progress("正在筛选与去重…")
     pages = select_slide_pages(frames, work_dir, identity, texture_threshold,
-                               duplicate_threshold, min_stable_frames, force)
+                               duplicate_threshold, min_stable_frames, force,
+                               use_face_detection)
     if not pages:
         raise RuntimeError("未找到可用的幻灯片画面")
     if progress:
