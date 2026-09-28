@@ -1,0 +1,11 @@
+/视频
+/提取/
+/.ppt_cache/
+__pycache__/
+/lib/python/
+/lib/ffmpeg-*/
+/lib/*.7z
+/发布包/
+/.builddeps/
+/.build/
+.gitignore

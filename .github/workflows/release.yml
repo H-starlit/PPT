@@ -1,0 +1,83 @@
+name: Build and publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --target .builddeps -r requirements/build.txt
+          python -m pip install --target lib/python -r requirements/release.txt
+
+      - name: Download and verify FFmpeg
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "ffmpeg-9.0.2-essentials_build.zip"
+          $extract = Join-Path $env:RUNNER_TEMP "ffmpeg-extract"
+          $url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip"
+          $expectedSha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          $actualSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "FFmpeg checksum mismatch: $actualSha256"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
+          $ffmpegRoot = Join-Path $extract "ffmpeg-9.0.2-essentials_build"
+          if (-not (Test-Path (Join-Path $ffmpegRoot "bin\ffmpeg.exe"))) {
+            throw "The expected FFmpeg executable was not found in the downloaded archive."
+          }
+          New-Item -ItemType Directory -Path "lib" -Force | Out-Null
+          Move-Item -LiteralPath $ffmpegRoot -Destination "lib\ffmpeg-9.0.2-essentials_build"
+
+      - name: Build GUI executable
+        run: python "scripts/打包GUI.py"
+
+      - name: Prepare release files and checksums
+        shell: pwsh
+        run: |
+          $releaseDir = "发布包\GUI"
+          $ffmpegDir = "lib\ffmpeg-9.0.2-essentials_build"
+          Copy-Item -LiteralPath "LICENSE" -Destination (Join-Path $releaseDir "LICENSE.txt")
+          Copy-Item -LiteralPath "THIRD_PARTY_LICENSES.md" -Destination $releaseDir
+          Copy-Item -LiteralPath (Join-Path $ffmpegDir "LICENSE") -Destination (Join-Path $releaseDir "FFmpeg-LICENSE.txt")
+          Copy-Item -LiteralPath (Join-Path $ffmpegDir "README.txt") -Destination (Join-Path $releaseDir "FFmpeg-BUILD-README.txt")
+          $exe = Join-Path $releaseDir "视频PPT抽取.exe"
+          if (-not (Test-Path $exe)) { throw "GUI executable was not built." }
+          $sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$sha256  视频PPT抽取.exe" | Set-Content -LiteralPath (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding ascii
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release create $tag `
+            "发布包/GUI/视频PPT抽取.exe" `
+            "发布包/GUI/SHA256SUMS.txt" `
+            "发布包/GUI/LICENSE.txt" `
+            "发布包/GUI/THIRD_PARTY_LICENSES.md" `
+            "发布包/GUI/FFmpeg-LICENSE.txt" `
+            "发布包/GUI/FFmpeg-BUILD-README.txt" `
+            --title "视频PPT抽取 $tag" `
+            --generate-notes `
+            --verify-tag `
+            --latest
