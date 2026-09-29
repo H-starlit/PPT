@@ -46,6 +46,7 @@ class ExtractorApp:
         self.root.title("视频 PPT 抽取")
         self._size_for_screen()
         self.root.configure(bg="#f3f6fa")
+        self.font_family = "Microsoft YaHei UI"
         self.paths: list[Path] = []
         self.rows: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
@@ -432,15 +433,14 @@ def main() -> int:
             (output / "selftest_error.txt").write_text(traceback.format_exc(), encoding="utf-8")
             return 1
     if len(sys.argv) == 2 and sys.argv[1] == "--smoke-gui":
-        # GitHub's Windows runner has no interactive desktop session. Verify
-        # the frozen GUI dependencies and bundled FFmpeg without creating Tk.
+        # Build the full widget tree without entering the event loop, so CI
+        # catches UI-construction regressions without needing an interactive desktop.
         try:
-            import cv2  # noqa: F401
-            import reportlab  # noqa: F401
-            from tkinterdnd2 import DND_FILES, TkinterDnD  # noqa: F401
-
             if core.find_ffmpeg(None) is None:
                 raise RuntimeError("Bundled FFmpeg was not found.")
+            app = ExtractorApp()
+            app.root.update_idletasks()
+            app.root.destroy()
         except Exception:
             traceback.print_exc()
             return 1
