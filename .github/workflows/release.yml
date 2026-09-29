@@ -128,7 +128,8 @@ jobs:
 
       - name: Build macOS application
         shell: bash
-        run: "$PYTHON_BIN" scripts/打包GUI.py
+        run: |
+          "$PYTHON_BIN" scripts/打包GUI.py
 
       - name: Smoke test application
         shell: bash
