@@ -12,7 +12,7 @@ Windows 版双击 `发布包/GUI/视频PPT抽取.exe`。把多个视频拖入窗
 
 Windows 默认把结果放在 exe 同目录的 `提取` 文件夹，也可以在窗口内另选位置。界面会适配高 DPI 缩放。
 
-Windows exe 包含 Python、压缩存储的 FFmpeg 和所需依赖，无需另外安装 Python 或 FFmpeg。首次提取时会把 FFmpeg 解压到用户本地缓存目录并复用，减小下载文件体积。抽帧缓存放在输出文件夹的上一级 `.ppt_cache` 中，便于断电后复用；再次处理同一视频和输出位置时会跳过已完成的 PDF。
+Windows exe 包含 Python、压缩存储的精简 FFmpeg 解码器和所需依赖，无需另外安装 Python 或 FFmpeg。首次提取时会把 FFmpeg 解压到用户本地缓存目录并复用，减小下载文件体积。Release 构建只保留常用视频解码器及 JPEG 抽帧所需组件，并在发布前测试 H.264、H.265、VP8/VP9、AV1、WMV、MPEG-4 和 ProRes。抽帧缓存放在输出文件夹的上一级 `.ppt_cache` 中，便于断电后复用；再次处理同一视频和输出位置时会跳过已完成的 PDF。
 
 ## 便携版：双击运行
 
@@ -45,7 +45,7 @@ FFmpeg 来源：[FFmpeg 官方下载页](https://ffmpeg.org/download.html)列出
 
 ## GitHub Releases
 
-Windows 程序通过 GitHub Releases 分发。向仓库推送 `v` 开头的版本标签（例如 `v1.2`）后，GitHub Actions 会在 Windows 上安装依赖并构建 exe，然后只将 exe 上传到 Release。
+Windows 程序通过 GitHub Releases 分发。向仓库推送 `v` 开头的版本标签（例如 `v1.3`）后，GitHub Actions 会在 Windows 上安装依赖、编译精简 FFmpeg 并构建 exe，然后只将 exe 上传到 Release。
 
 ```powershell
 git tag v1.0.0

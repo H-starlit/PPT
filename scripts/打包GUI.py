@@ -16,7 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> int:
     builddeps = ROOT / ".builddeps"
     packages = ROOT / "lib" / "python"
-    ffmpeg = next((p for p in (ROOT / "lib").glob("*/bin/ffmpeg.exe") if p.is_file()), None)
+    ffmpeg = ROOT / "lib" / "ffmpeg-minimal" / "bin" / "ffmpeg.exe"
+    if not ffmpeg.is_file():
+        ffmpeg = next((p for p in (ROOT / "lib").glob("*/bin/ffmpeg.exe") if p.is_file()), None)
     if not builddeps.is_dir() or not packages.is_dir() or ffmpeg is None:
         print("缺少本地打包工具、Python 依赖或 FFmpeg。", file=sys.stderr)
         return 1
@@ -30,6 +32,7 @@ def main() -> int:
             target.write(block)
             digest.update(block)
     checksum_file.write_text(digest.hexdigest() + "\n", encoding="ascii")
+    print(f"FFmpeg compressed: {ffmpeg.stat().st_size:,} -> {compressed_ffmpeg.stat().st_size:,} bytes.")
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join((str(builddeps), str(packages), env.get("PYTHONPATH", "")))
     command = [
@@ -51,6 +54,8 @@ def main() -> int:
         return result.returncode
     # The default Windows console code page may not encode the Chinese filename.
     print("GUI executable build completed successfully.")
+    executable = ROOT / "发布包" / "GUI" / "视频PPT抽取.exe"
+    print(f"GUI executable size: {executable.stat().st_size:,} bytes.")
     return 0
 
 

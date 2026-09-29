@@ -4,7 +4,7 @@
 
 | 组件 | 版本/来源 | 许可证 |
 |---|---|---|
-| FFmpeg（Windows） | gyan.dev Windows essentials 构建 9.0.2 | GPLv3；构建信息和源码地址见 Windows 发布包附带的 `FFmpeg-BUILD-README.txt` |
+| FFmpeg（Windows） | FFmpeg 9.0.2 官方源码的精简构建；只启用选定的视频解码器及 JPEG 抽帧所需组件，不启用外部编解码库 | LGPL 2.1 或更高版本；源码：https://github.com/FFmpeg/FFmpeg/tree/n9.0.2 |
 | OpenCV | opencv-python-headless 4.14.0.94 | Apache License 2.0 |
 | NumPy | 2.3.5 | BSD 3-Clause 及其随 wheel 附带的组件声明 |
 | Pillow | 12.3.0 | Pillow 自带许可证 |

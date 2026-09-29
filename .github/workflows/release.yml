@@ -44,8 +44,62 @@ jobs:
           if (-not (Test-Path (Join-Path $ffmpegRoot "bin\ffmpeg.exe"))) {
             throw "The expected FFmpeg executable was not found in the downloaded archive."
           }
-          New-Item -ItemType Directory -Path "lib" -Force | Out-Null
-          Move-Item -LiteralPath $ffmpegRoot -Destination "lib\ffmpeg-9.0.2-essentials_build"
+          New-Item -ItemType Directory -Path "lib\ffmpeg-reference" -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $ffmpegRoot "bin\ffmpeg.exe") -Destination "lib\ffmpeg-reference\ffmpeg.exe"
+
+      - name: Set up MinGW build tools
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: base-devel git mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-nasm
+
+      - name: Build minimal FFmpeg decoder
+        shell: msys2 {0}
+        run: |
+          mkdir -p .build
+          git clone --depth 1 --branch n9.0.2 https://github.com/FFmpeg/FFmpeg.git .build/ffmpeg-source
+          cd .build/ffmpeg-source
+          prefix="$(cygpath -u "$GITHUB_WORKSPACE")/lib/ffmpeg-minimal"
+          decoders=(h264 hevc vp8 vp9 av1 mpeg1video mpeg2video mpeg4 msmpeg4v1 msmpeg4v2 msmpeg4v3 wmv1 wmv2 wmv3 mjpeg vc1 prores rawvideo dvvideo cinepak flv1 theora indeo3 indeo5 dnxhd huffyuv ffv1 png qtrle tscc)
+          parsers=(h264 hevc vp8 vp9 av1 mpeg4video mpegvideo mjpeg vc1)
+          demuxers=(mov matroska avi asf mpegts mpegps flv ogg rm nut mxf ivf image2)
+          options=(--disable-everything --enable-ffmpeg --enable-avcodec --enable-avformat --enable-avfilter --enable-swscale --enable-avutil --enable-small --disable-debug --disable-doc --disable-network --disable-autodetect --disable-ffplay --disable-ffprobe --disable-encoders --disable-muxers --disable-devices --disable-indevs --disable-outdevs --disable-programs --enable-ffmpeg --enable-protocol=file --enable-muxer=image2 --enable-encoder=mjpeg --enable-filter=fps --enable-filter=scale --enable-filter=format)
+          for name in "${decoders[@]}"; do options+=("--enable-decoder=$name"); done
+          for name in "${parsers[@]}"; do options+=("--enable-parser=$name"); done
+          for name in "${demuxers[@]}"; do options+=("--enable-demuxer=$name"); done
+          ./configure --prefix="$prefix" --arch=x86_64 --target-os=mingw32 --cross-prefix=x86_64-w64-mingw32- --cc=x86_64-w64-mingw32-gcc --enable-cross-compile --enable-static --disable-shared "${options[@]}"
+          make -j2
+          make install
+          test -f "$prefix/bin/ffmpeg.exe"
+          echo "MINIMAL_FFMPEG_BYTES=$(stat -c%s "$prefix/bin/ffmpeg.exe")" >> "$GITHUB_ENV"
+
+      - name: Test common video decoders
+        shell: pwsh
+        run: |
+          $reference = "lib\ffmpeg-reference\ffmpeg.exe"
+          $minimal = "lib\ffmpeg-minimal\bin\ffmpeg.exe"
+          $testDir = Join-Path $env:RUNNER_TEMP "ffmpeg-decoder-tests"
+          New-Item -ItemType Directory -Path $testDir -Force | Out-Null
+          $cases = @(
+            @{ Name = "h264.mp4"; Codec = "libx264"; Format = "mp4"; Extra = @("-preset", "ultrafast") },
+            @{ Name = "hevc.mp4"; Codec = "libx265"; Format = "mp4"; Extra = @("-preset", "ultrafast", "-x265-params", "pools=1:frame-threads=1") },
+            @{ Name = "vp9.webm"; Codec = "libvpx-vp9"; Format = "webm"; Extra = @("-deadline", "realtime", "-cpu-used", "8") },
+            @{ Name = "av1.mkv"; Codec = "libaom-av1"; Format = "matroska"; Extra = @("-cpu-used", "8", "-row-mt", "0") },
+            @{ Name = "wmv2.avi"; Codec = "wmv2"; Format = "avi"; Extra = @() },
+            @{ Name = "mpeg4.avi"; Codec = "mpeg4"; Format = "avi"; Extra = @() },
+            @{ Name = "prores.mov"; Codec = "prores_ks"; Format = "mov"; Extra = @() }
+          )
+          foreach ($case in $cases) {
+            $video = Join-Path $testDir $case.Name
+            $createArgs = @("-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=128x72:rate=3", "-t", "2", "-an", "-c:v", $case.Codec) + $case.Extra + @($video)
+            & $reference @createArgs
+            if ($LASTEXITCODE -ne 0) { throw "Could not create $($case.Codec) decoder fixture." }
+            $frame = Join-Path $testDir ($case.Name + ".jpg")
+            & $minimal -hide_banner -loglevel error -nostdin -y -i $video -frames:v 1 -q:v 3 $frame
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $frame)) { throw "Minimal FFmpeg failed to decode $($case.Codec) in $($case.Format)." }
+            "Decoded $($case.Codec) from $($case.Format)."
+          }
 
       - name: Build GUI executable
         run: python "scripts/打包GUI.py"
