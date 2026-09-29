@@ -10,6 +10,7 @@ import threading
 import time
 import traceback
 import tkinter as tk
+import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -46,6 +47,7 @@ class ExtractorApp:
         self.root.title("视频 PPT 抽取")
         self._size_for_screen()
         self.root.configure(bg="#f3f6fa")
+        self.font_family = self._choose_font()
         self.paths: list[Path] = []
         self.rows: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
@@ -64,6 +66,17 @@ class ExtractorApp:
         self._build()
         self.root.after_idle(self._layout_settings)
         self.root.after(100, self._poll)
+
+    def _choose_font(self) -> str:
+        available = {name.casefold(): name for name in tkfont.families(self.root)}
+        if sys.platform == "darwin":
+            candidates = ("PingFang SC", "Heiti SC", "Arial Unicode MS", "Arial")
+        elif sys.platform == "win32":
+            candidates = ("Microsoft YaHei UI", "Microsoft YaHei", "Arial")
+        else:
+            candidates = ("Noto Sans CJK SC", "WenQuanYi Micro Hei", "DejaVu Sans")
+        return next((available[name.casefold()] for name in candidates
+                     if name.casefold() in available), next(iter(available.values()), "TkDefaultFont"))
 
     def _size_for_screen(self) -> None:
         """Choose a comfortable initial size while leaving room for taskbars."""
@@ -90,11 +103,11 @@ class ExtractorApp:
         style = ttk.Style(self.root)
         if "vista" in style.theme_names():
             style.theme_use("vista")
-        style.configure("TButton", padding=(11, 6), font=("Microsoft YaHei UI", 9))
-        style.configure("TEntry", padding=(6, 5), font=("Microsoft YaHei UI", 9))
-        style.configure("Treeview", rowheight=29, font=("Microsoft YaHei UI", 9),
+        style.configure("TButton", padding=(11, 6), font=(self.font_family, 9))
+        style.configure("TEntry", padding=(6, 5), font=(self.font_family, 9))
+        style.configure("Treeview", rowheight=29, font=(self.font_family, 9),
                         background="#ffffff", fieldbackground="#ffffff", foreground="#25364a")
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 9, "bold"),
+        style.configure("Treeview.Heading", font=(self.font_family, 9, "bold"),
                         background="#edf2f8", foreground="#43566d", padding=(8, 7))
         style.configure("Horizontal.TProgressbar", troughcolor="#e3eaf2", background="#3978c5",
                         bordercolor="#e3eaf2", lightcolor="#3978c5", darkcolor="#3978c5")
@@ -102,9 +115,9 @@ class ExtractorApp:
         outer = tk.Frame(self.root, bg="#f3f6fa", padx=20, pady=15)
         outer.pack(fill="both", expand=True)
         tk.Label(outer, text="视频 PPT 抽取", bg="#f3f6fa", fg="#1b304b",
-                 font=("Microsoft YaHei UI", 21, "bold")).pack(anchor="w")
+                 font=(self.font_family, 21, "bold")).pack(anchor="w")
         tk.Label(outer, text="导入视频，自动筛选画面并分别生成 PDF",
-                 bg="#f3f6fa", fg="#65758a", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(3, 12))
+                 bg="#f3f6fa", fg="#65758a", font=(self.font_family, 10)).pack(anchor="w", pady=(3, 12))
 
         buttons = tk.Frame(outer, bg="#f3f6fa")
         buttons.pack(fill="x", pady=(0, 10))
@@ -118,7 +131,7 @@ class ExtractorApp:
         drop = tk.Frame(outer, bg="#eaf2fc", highlightbackground="#c4d8f1", highlightthickness=1)
         drop.pack(fill="x", pady=(0, 10))
         drop_label = tk.Label(drop, text="将视频拖到这里，或拖入下方列表",
-                              bg="#eaf2fc", fg="#315d91", font=("Microsoft YaHei UI", 10),
+                              bg="#eaf2fc", fg="#315d91", font=(self.font_family, 10),
                               pady=12)
         drop_label.pack(fill="x")
         for target in (drop, drop_label):
@@ -148,7 +161,7 @@ class ExtractorApp:
         output_row = tk.Frame(outer, bg="#f3f6fa")
         output_row.pack(fill="x", pady=(14, 5))
         tk.Label(output_row, text="输出文件夹", bg="#f3f6fa", fg="#1b304b",
-                 font=("Microsoft YaHei UI", 10)).pack(side="left")
+                 font=(self.font_family, 10)).pack(side="left")
         self.output_entry = ttk.Entry(output_row, textvariable=self.output)
         self.output_entry.pack(side="left", fill="x", expand=True, padx=10)
         self.folder_button = ttk.Button(output_row, text="选择", command=self._choose_output)
@@ -166,11 +179,11 @@ class ExtractorApp:
             cell = tk.Frame(settings, bg="#f3f6fa")
             self.setting_cells.append(cell)
             tk.Label(cell, text=label, bg="#f3f6fa", fg="#30445d",
-                     font=("Microsoft YaHei UI", 9)).pack(anchor="w")
+                     font=(self.font_family, 9)).pack(anchor="w")
             entry = ttk.Entry(cell, textvariable=variable, width=9)
             entry.pack(anchor="w", pady=(3, 0))
             tk.Label(cell, text=tip, bg="#f3f6fa", fg="#7a899b",
-                     font=("Microsoft YaHei UI", 8)).pack(anchor="w")
+                     font=(self.font_family, 8)).pack(anchor="w")
         self.face_check = ttk.Checkbutton(settings, text="启用人脸识别（过滤有人像的画面）",
                                           variable=self.face_detection)
         self.reset_button = ttk.Button(settings, text="恢复默认值", command=self._reset_settings)
@@ -183,7 +196,7 @@ class ExtractorApp:
         self.start_button.pack(side="left")
         ttk.Button(bottom, text="打开输出文件夹", command=self._open_output).pack(side="left", padx=9)
         tk.Label(bottom, textvariable=self.summary, bg="#f3f6fa", fg="#52657b",
-                 font=("Microsoft YaHei UI", 9)).pack(side="right")
+                 font=(self.font_family, 9)).pack(side="right")
 
         progress_row = tk.Frame(outer, bg="#f3f6fa")
         progress_row.pack(fill="x")
@@ -191,7 +204,7 @@ class ExtractorApp:
                                            variable=self.progress_value)
         self.progressbar.pack(side="left", fill="x", expand=True, padx=(0, 14))
         tk.Label(progress_row, textvariable=self.eta, bg="#f3f6fa", fg="#65758a",
-                 font=("Microsoft YaHei UI", 9), width=25, anchor="e").pack(side="right")
+                 font=(self.font_family, 9), width=25, anchor="e").pack(side="right")
 
     def _schedule_settings_layout(self, _event=None) -> None:
         if self._settings_layout_after is not None:
@@ -286,7 +299,14 @@ class ExtractorApp:
     def _open_output(self) -> None:
         folder = Path(self.output.get().strip()).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
-        os.startfile(folder)
+        if sys.platform == "win32":
+            os.startfile(folder)
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.Popen(["open", str(folder)])
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", str(folder)])
 
     def _set_running(self, value: bool) -> None:
         self.running = value

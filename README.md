@@ -8,9 +8,11 @@
 
 ## 单文件图形版
 
-双击 `发布包/GUI/视频PPT抽取.exe`，把多个视频拖入窗口，或点击“添加视频”。确认输出文件夹和识别设置后点击“开始提取”；程序会逐个生成与视频同名的 PDF，并显示处理进度和按已处理视频用时估算的剩余分钟数。可以关闭“启用人脸识别”以跳过人脸检测；这会加快筛选，但也可能让包含人物的画面进入 PDF。默认输出到 exe 同目录的 `提取` 文件夹，也可以在窗口内选择其他位置。拖入的视频可以来自不同文件夹，但同一批次不能有重名的视频文件。窗口启动尺寸会根据屏幕空间自动选择；调整窗口大小时，识别参数会重新排列，视频列表可横向滚动以查看较长路径。Windows 高 DPI 缩放由程序适配。
+Windows 版双击 `发布包/GUI/视频PPT抽取.exe`；macOS 版从 GitHub Release 下载与芯片匹配的 ZIP（Apple Silicon 选 `arm64`，Intel 选 `x86_64`），解压后可将 `视频PPT抽取.app` 拖到“应用程序”。把多个视频拖入窗口，或点击“添加视频”。确认输出文件夹和识别设置后点击“开始提取”；程序会逐个生成与视频同名的 PDF，并显示处理进度和估算的剩余分钟数。可以关闭“启用人脸识别”以跳过人脸检测；这会加快筛选，但也可能让包含人物的画面进入 PDF。拖入的视频可以来自不同文件夹，但同一批次不能有重名的视频文件。窗口启动尺寸会根据屏幕空间自动选择；调整窗口大小时，识别参数会重新排列，视频列表可滚动查看较长路径。
 
-该 exe 已包含 Python、FFmpeg 和所需依赖，复制到其他 64 位 Windows 电脑即可运行，无需安装或解压其他组件。抽帧缓存放在输出文件夹的上一级 `.ppt_cache` 中，便于断电后复用；再次处理同一视频和输出位置时会跳过已完成的 PDF。
+Windows 默认把结果放在 exe 同目录的 `提取` 文件夹。macOS 默认放在 `~/Documents/视频PPT抽取/提取`，避免向 `/Applications` 应用程序目录写入文件；也可以在窗口内另选位置。Windows 会适配高 DPI 缩放，macOS 使用系统原生 Tk 界面缩放。macOS 应用目前未做 Apple Developer ID 签名和公证；首次打开若出现安全提示，请在 Finder 中右键应用并选择“打开”。
+
+Windows exe 和 macOS app 均包含 Python、FFmpeg 和所需依赖，无需另外安装 Python、FFmpeg 或 Homebrew。抽帧缓存放在输出文件夹的上一级 `.ppt_cache` 中，便于断电后复用；再次处理同一视频和输出位置时会跳过已完成的 PDF。
 
 ## 便携版：双击运行
 
@@ -43,7 +45,7 @@ FFmpeg 来源：[FFmpeg 官方下载页](https://ffmpeg.org/download.html)列出
 
 ## GitHub Releases
 
-Windows 单文件程序通过 GitHub Releases 分发；GitHub Packages 面向 npm、NuGet、Maven、Gradle、RubyGems 和容器等包格式，不适合直接托管本项目的独立 `.exe`。向仓库推送 `v` 开头的版本标签（例如 `v1.0.0`）后，GitHub Actions 会安装锁定依赖、下载并校验 FFmpeg 9.0.2、构建 GUI，并自动创建 Release。Release 附带程序、SHA-256 校验文件和 GPL/第三方许可证资料。
+Windows 和 macOS 程序通过 GitHub Releases 分发；GitHub Packages 面向 npm、NuGet、Maven、Gradle、RubyGems 和容器等包格式，不适合直接托管本项目的桌面安装包。向仓库推送 `v` 开头的版本标签（例如 `v1.0.0`）后，GitHub Actions 会分别在 Windows、Apple Silicon Mac 和 Intel Mac 上安装依赖并构建，再将 Windows exe 与两种架构的 macOS app ZIP 上传到同一 Release。Release 附带 SHA-256 校验文件和许可证资料。
 
 ```powershell
 git tag v1.0.0
@@ -54,6 +56,16 @@ git push origin v1.0.0
 
 在源码目录使用 64 位 Python 3.12 运行 `python scripts/打包便携版.py --replace`，即可更新 `发布包` 中的便携文件夹和 ZIP。打包脚本使用当前 Python 安装目录中的标准库，排除其全局安装的软件包；视频、提取结果和缓存不会进入压缩包。
 
-图形版使用 `python scripts/打包GUI.py` 生成单文件 exe。打包依赖清单位于 `requirements/build.txt`，运行依赖清单位于 `requirements/release.txt`。GitHub Release 工作流会自行下载并校验 FFmpeg，再安装 Python 依赖和构建工具；这些依赖目录不会提交到仓库。
+图形版使用 `python scripts/打包GUI.py` 按当前系统生成桌面程序：Windows 生成单文件 exe，macOS 生成 `.app` 应用包。在 macOS 本机打包前，需要 Python 3.12、Tk 支持和 Homebrew：
+
+```bash
+brew install python@3.12 python-tk@3.12
+python3.12 -m pip install --target .builddeps -r requirements/build.txt -r requirements/macos-build.txt
+python3.12 -m pip install --target lib/python -r requirements/release.txt
+python3.12 scripts/准备macOS_FFmpeg.py
+python3.12 scripts/打包GUI.py
+```
+
+Windows 和 macOS 的依赖分别在 `requirements/build.txt`、`requirements/macos-build.txt` 和 `requirements/release.txt` 中管理。GitHub Release 工作流会在各自平台准备 FFmpeg 和依赖；这些依赖目录不会提交到仓库。
 
 页数偏少时，可缩短 `--interval`，或提高 `--texture-threshold`；重复页偏多时，可提高 `--duplicate-threshold` 或 `--min-stable-frames`。默认值分别为 2 秒、9、5 和 2 帧。`--force` 会重新抽帧并处理所有视频；仅调整筛选参数时会复用缓存帧。人脸与版式识别是启发式判断，可能漏掉短暂出现的 PPT，也不能保证排除所有实拍画面。此程序提取的是视频画面，不能恢复可编辑的原始 PPT 元素。

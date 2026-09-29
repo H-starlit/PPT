@@ -89,3 +89,73 @@ jobs:
             --generate-notes `
             --verify-tag `
             --latest
+
+  build-macos-app:
+    needs: build-and-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install Python with Tk support
+        shell: bash
+        run: |
+          test "$(uname -m)" = "${{ matrix.architecture }}"
+          brew install python@3.12 python-tk@3.12
+          echo "PYTHON_BIN=$(brew --prefix python@3.12)/bin/python3.12" >> "$GITHUB_ENV"
+
+      - name: Install pinned dependencies
+        shell: bash
+        run: |
+          "$PYTHON_BIN" -m pip install --upgrade pip
+          "$PYTHON_BIN" -m pip install --target .builddeps -r requirements/build.txt -r requirements/macos-build.txt
+          "$PYTHON_BIN" -m pip install --target lib/python -r requirements/release.txt
+          "$PYTHON_BIN" -c "import tkinter; root=tkinter.Tk(); root.withdraw(); root.destroy()"
+
+      - name: Prepare macOS FFmpeg
+        shell: bash
+        run: |
+          "$PYTHON_BIN" scripts/准备macOS_FFmpeg.py
+          lib/ffmpeg-imageio/bin/ffmpeg -version | head -n 2
+
+      - name: Build macOS application
+        shell: bash
+        run: "$PYTHON_BIN" scripts/打包GUI.py
+
+      - name: Smoke test application
+        shell: bash
+        run: |
+          app="发布包/macOS/视频PPT抽取.app"
+          test -x "$app/Contents/MacOS/视频PPT抽取"
+          "$app/Contents/MacOS/视频PPT抽取" --smoke-gui
+
+      - name: Package application and upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          release_dir="发布包/macOS"
+          app="$release_dir/视频PPT抽取.app"
+          cp LICENSE "$release_dir/LICENSE-macOS-${{ matrix.architecture }}.txt"
+          lib/ffmpeg-imageio/bin/ffmpeg -L > "$release_dir/FFmpeg-LICENSE-macOS-${{ matrix.architecture }}.txt"
+          {
+            printf '%s\n' "Bundled from imageio-ffmpeg 0.6.0 (imageio/imageio-binaries)."
+            lib/ffmpeg-imageio/bin/ffmpeg -version
+            lib/ffmpeg-imageio/bin/ffmpeg -buildconf
+          } > "$release_dir/FFmpeg-BUILD-README-macOS-${{ matrix.architecture }}.txt"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$release_dir/视频PPT抽取-macOS-${{ matrix.architecture }}.zip"
+          (cd "$release_dir" && shasum -a 256 "视频PPT抽取-macOS-${{ matrix.architecture }}.zip" > "SHA256SUMS-macOS-${{ matrix.architecture }}.txt")
+          gh release upload "$GITHUB_REF_NAME" \
+            "$release_dir/视频PPT抽取-macOS-${{ matrix.architecture }}.zip" \
+            "$release_dir/SHA256SUMS-macOS-${{ matrix.architecture }}.txt" \
+            "$release_dir/LICENSE-macOS-${{ matrix.architecture }}.txt" \
+            "$release_dir/FFmpeg-LICENSE-macOS-${{ matrix.architecture }}.txt" \
+            "$release_dir/FFmpeg-BUILD-README-macOS-${{ matrix.architecture }}.txt"
