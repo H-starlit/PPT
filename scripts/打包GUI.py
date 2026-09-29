@@ -36,7 +36,8 @@ def main() -> int:
     result = subprocess.run(command, cwd=ROOT, env=env)
     if result.returncode:
         return result.returncode
-    print(f"已生成：{ROOT / '发布包' / 'GUI' / '视频PPT抽取.exe'}")
+    # The default Windows console code page may not encode the Chinese filename.
+    print("GUI executable build completed successfully.")
     return 0
 
 
