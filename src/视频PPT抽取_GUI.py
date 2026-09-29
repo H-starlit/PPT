@@ -432,6 +432,7 @@ def main() -> int:
             output.mkdir(parents=True, exist_ok=True)
             (output / "selftest_error.txt").write_text(traceback.format_exc(), encoding="utf-8")
             return 1
+    _enable_windows_dpi_awareness()
     if len(sys.argv) == 2 and sys.argv[1] == "--smoke-gui":
         # Build the full widget tree without entering the event loop, so CI
         # catches UI-construction regressions without needing an interactive desktop.
@@ -445,7 +446,6 @@ def main() -> int:
             traceback.print_exc()
             return 1
         return 0
-    _enable_windows_dpi_awareness()
     app = ExtractorApp()
     app.run()
     return 0

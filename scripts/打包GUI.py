@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import lzma
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +20,16 @@ def main() -> int:
     if not builddeps.is_dir() or not packages.is_dir() or ffmpeg is None:
         print("缺少本地打包工具、Python 依赖或 FFmpeg。", file=sys.stderr)
         return 1
+    compressed_dir = ROOT / ".build" / "ffmpeg"
+    compressed_dir.mkdir(parents=True, exist_ok=True)
+    compressed_ffmpeg = compressed_dir / "ffmpeg.exe.xz"
+    checksum_file = compressed_dir / "ffmpeg.exe.xz.sha256"
+    digest = hashlib.sha256()
+    with ffmpeg.open("rb") as source, lzma.open(compressed_ffmpeg, "wb", preset=9) as target:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            target.write(block)
+            digest.update(block)
+    checksum_file.write_text(digest.hexdigest() + "\n", encoding="ascii")
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join((str(builddeps), str(packages), env.get("PYTHONPATH", "")))
     command = [
@@ -30,7 +42,8 @@ def main() -> int:
         "--collect-all", "tkinterdnd2",
         "--collect-all", "cv2", "--hidden-import", "cv2",
         "--collect-all", "reportlab",
-        "--add-binary", f"{ffmpeg}{os.pathsep}lib/ffmpeg/bin",
+        "--add-data", f"{compressed_ffmpeg}{os.pathsep}lib/ffmpeg",
+        "--add-data", f"{checksum_file}{os.pathsep}lib/ffmpeg",
         str(ROOT / "src" / "视频PPT抽取_GUI.py"),
     ]
     result = subprocess.run(command, cwd=ROOT, env=env)

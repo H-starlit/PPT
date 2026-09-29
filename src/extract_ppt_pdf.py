@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
+import lzma
+import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -21,6 +25,7 @@ OUTPUT_DIR = BASE_DIR / "提取"
 CACHE_DIR = BASE_DIR / ".ppt_cache"
 LIB_DIR = BUNDLE_DIR / "lib"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".m4v", ".wmv"}
+_verified_bundled_ffmpeg: str | None = None
 
 # 优先使用项目内安装的 Python 依赖，不修改全局 Python 环境。
 if (LIB_DIR / "python").is_dir():
@@ -42,6 +47,7 @@ def load_json(path: Path) -> dict | None:
 
 
 def find_ffmpeg(explicit: str | None) -> str:
+    global _verified_bundled_ffmpeg
     if explicit:
         candidate = Path(explicit)
         if candidate.is_file():
@@ -56,6 +62,45 @@ def find_ffmpeg(explicit: str | None) -> str:
     for local in local_candidates:
         if local.is_file():
             return str(local)
+    compressed = LIB_DIR / "ffmpeg" / "ffmpeg.exe.xz"
+    checksum_file = compressed.with_suffix(compressed.suffix + ".sha256")
+    if getattr(sys, "frozen", False) and compressed.is_file() and checksum_file.is_file():
+        expected_hash = checksum_file.read_text(encoding="ascii").strip().split()[0].lower()
+        if len(expected_hash) != 64 or any(c not in "0123456789abcdef" for c in expected_hash):
+            raise RuntimeError("内置 FFmpeg 校验信息无效。")
+        cache_base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir())
+        cache_dir = cache_base / "视频PPT抽取" / "ffmpeg" / expected_hash[:16]
+        cached = cache_dir / "ffmpeg.exe"
+        if _verified_bundled_ffmpeg == str(cached) and cached.is_file():
+            return str(cached)
+
+        def matches(path: Path) -> bool:
+            if not path.is_file():
+                return False
+            digest = hashlib.sha256()
+            with path.open("rb") as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(block)
+            return digest.hexdigest() == expected_hash
+
+        if matches(cached):
+            _verified_bundled_ffmpeg = str(cached)
+            return str(cached)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        temporary = cache_dir / "ffmpeg.exe.tmp"
+        digest = hashlib.sha256()
+        try:
+            with lzma.open(compressed, "rb") as source, temporary.open("wb") as target:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    target.write(block)
+                    digest.update(block)
+            if digest.hexdigest() != expected_hash:
+                raise RuntimeError("内置 FFmpeg 解压后校验失败。")
+            temporary.replace(cached)
+        finally:
+            temporary.unlink(missing_ok=True)
+        _verified_bundled_ffmpeg = str(cached)
+        return str(cached)
     found = shutil.which("ffmpeg")
     if found:
         return found
