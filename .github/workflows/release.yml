@@ -58,39 +58,24 @@ jobs:
           $process = Start-Process -FilePath $exe -ArgumentList "--smoke-gui" -WindowStyle Hidden -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "GUI smoke test failed with exit code $($process.ExitCode)." }
 
-      - name: Prepare release files and checksums
-        shell: pwsh
-        run: |
-          $releaseDir = "发布包\GUI"
-          $ffmpegDir = "lib\ffmpeg-9.0.2-essentials_build"
-          Copy-Item -LiteralPath "LICENSE" -Destination (Join-Path $releaseDir "LICENSE.txt")
-          Copy-Item -LiteralPath "THIRD_PARTY_LICENSES.md" -Destination $releaseDir
-          Copy-Item -LiteralPath (Join-Path $ffmpegDir "LICENSE") -Destination (Join-Path $releaseDir "FFmpeg-LICENSE.txt")
-          Copy-Item -LiteralPath (Join-Path $ffmpegDir "README.txt") -Destination (Join-Path $releaseDir "FFmpeg-BUILD-README.txt")
-          $exe = Join-Path $releaseDir "视频PPT抽取.exe"
-          if (-not (Test-Path $exe)) { throw "GUI executable was not built." }
-          $sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$sha256  视频PPT抽取.exe" | Set-Content -LiteralPath (Join-Path $releaseDir "SHA256SUMS.txt") -Encoding ascii
-
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
-          $assets = @(
-            "发布包/GUI/视频PPT抽取.exe"
-            "发布包/GUI/SHA256SUMS.txt"
-            "发布包/GUI/LICENSE.txt"
-            "发布包/GUI/THIRD_PARTY_LICENSES.md"
-            "发布包/GUI/FFmpeg-LICENSE.txt"
-            "发布包/GUI/FFmpeg-BUILD-README.txt"
-          )
+          $asset = "发布包/GUI/视频PPT抽取.exe"
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag @assets --clobber
+            $release = gh release view $tag --json assets | ConvertFrom-Json
+            foreach ($existingAsset in $release.assets) {
+              if ($existingAsset.name -ne "视频PPT抽取.exe") {
+                gh release delete-asset $tag $existingAsset.name --yes
+              }
+            }
+            gh release upload $tag $asset --clobber
           } else {
-            gh release create $tag @assets `
+            gh release create $tag $asset `
             --title "视频PPT抽取 $tag" `
             --generate-notes `
             --verify-tag `

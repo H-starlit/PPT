@@ -50,6 +50,7 @@ class ExtractorApp:
         self.rows: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
         self.running = False
+        self.completed_videos: set[Path] = set()
         self.output = tk.StringVar(value=str(core.OUTPUT_DIR))
         self.interval = tk.StringVar(value=DEFAULT_SETTINGS["interval"])
         self.texture = tk.StringVar(value=DEFAULT_SETTINGS["texture"])
@@ -181,7 +182,8 @@ class ExtractorApp:
         bottom.pack(fill="x", pady=(13, 7))
         self.start_button = ttk.Button(bottom, text="开始提取", command=self._start)
         self.start_button.pack(side="left")
-        ttk.Button(bottom, text="打开输出文件夹", command=self._open_output).pack(side="left", padx=9)
+        self.open_output_button = ttk.Button(bottom, text="打开输出文件夹", command=self._open_output)
+        self.open_output_button.pack(side="left", padx=9)
         tk.Label(bottom, textvariable=self.summary, bg="#f3f6fa", fg="#52657b",
                  font=(self.font_family, 9)).pack(side="right")
 
@@ -293,7 +295,7 @@ class ExtractorApp:
         state = "disabled" if value else "normal"
         for widget in (self.add_button, self.remove_button, self.clear_button,
                        self.folder_button, self.output_entry, self.start_button,
-                       self.face_check, self.reset_button):
+                       self.face_check, self.reset_button, self.open_output_button):
             widget.configure(state=state)
         for cell in self.setting_entries:
             for widget in cell.winfo_children():
@@ -331,6 +333,9 @@ class ExtractorApp:
         self.progress_value.set(0)
         self.eta.set("正在估算剩余时间…")
         self.summary.set(f"正在处理 1/{len(self.paths)}")
+        self.completed_videos.clear()
+        for path in self.paths:
+            self.table.set(self.rows[path], "status", "待处理")
         threading.Thread(target=self._worker, args=(list(self.paths), output_dir, settings), daemon=True).start()
 
     def _worker(self, paths: list[Path], output_dir: Path, settings: dict) -> None:
@@ -353,7 +358,9 @@ class ExtractorApp:
                          0.92 if "PDF" in message else None)
                 if phase is not None:
                     completed_units = current_index - 1 + phase
-                    left = estimated_item_time * (len(paths) - current_index + 1 - phase)
+                    left = (estimated_item_time * (1 - phase) +
+                            sum(durations) / len(durations) * (len(paths) - current_index)
+                            if durations else estimated_item_time * (len(paths) - current_index + 1 - phase))
                     self.events.put(("progress", completed_units, len(paths), max(0, left)))
 
             try:
@@ -363,6 +370,7 @@ class ExtractorApp:
                 status = f"完成 · {pages} 页" if "已跳过" not in result else f"已有 PDF · {pages} 页"
                 self.events.put(("status", path, status))
                 ok += 1
+                self.events.put(("completed", path))
             except Exception as exc:
                 self.events.put(("status", path, "失败"))
                 self.events.put(("error", f"{path.name}：{exc}"))
@@ -392,15 +400,17 @@ class ExtractorApp:
                     _, completed_units, total, remaining = event
                     self.progress_value.set(completed_units / total * 100 if total else 0)
                     self.eta.set(self._format_eta(remaining) if total else "")
+                elif event[0] == "completed":
+                    self.completed_videos.add(event[1])
                 elif event[0] == "error":
-                    messagebox.showerror("提取失败", event[1])
+                    self.summary.set("部分视频处理失败")
+                    self.root.bell()
                 elif event[0] == "done":
                     self._set_running(False)
                     self.progress_value.set(100 if event[2] else 0)
-                    self.eta.set("处理完成")
+                    self.eta.set("处理完成" if event[1] == event[2] else "处理结束")
                     self.summary.set(f"完成 {event[1]}/{event[2]} 个视频")
-                    if event[1] == event[2]:
-                        messagebox.showinfo("提取完成", f"已处理 {event[1]} 个视频。\nPDF 保存在：\n{self.output.get()}")
+                    self.root.bell()
         except queue.Empty:
             pass
         self.root.after(100, self._poll)

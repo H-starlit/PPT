@@ -45,7 +45,7 @@ FFmpeg 来源：[FFmpeg 官方下载页](https://ffmpeg.org/download.html)列出
 
 ## GitHub Releases
 
-Windows 程序通过 GitHub Releases 分发。向仓库推送 `v` 开头的版本标签（例如 `v1.0.0`）后，GitHub Actions 会在 Windows 上安装依赖并构建 exe，然后上传到 Release。Release 附带 SHA-256 校验文件和许可证资料。
+Windows 程序通过 GitHub Releases 分发。向仓库推送 `v` 开头的版本标签（例如 `v1.1`）后，GitHub Actions 会在 Windows 上安装依赖并构建 exe，然后只将 exe 上传到 Release。
 
 ```powershell
 git tag v1.0.0
