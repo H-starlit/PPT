@@ -13,13 +13,8 @@ from typing import Callable
 
 
 SOURCE_DIR = Path(__file__).resolve().parent
-if getattr(sys, "frozen", False) and sys.platform == "darwin":
-    # A macOS .app bundle is commonly installed in /Applications, which is
-    # not a suitable location for videos, PDFs, or writable processing cache.
-    BASE_DIR = Path.home() / "Documents" / "视频PPT抽取"
-else:
-    BASE_DIR = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
-                else SOURCE_DIR.parent if SOURCE_DIR.name == "src" else SOURCE_DIR)
+BASE_DIR = (Path(sys.executable).resolve().parent if getattr(sys, "frozen", False)
+            else SOURCE_DIR.parent if SOURCE_DIR.name == "src" else SOURCE_DIR)
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR))
 VIDEO_DIR = BASE_DIR / "视频"  # 输入路径相对于脚本，而非命令行当前目录
 OUTPUT_DIR = BASE_DIR / "提取"

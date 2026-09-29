@@ -10,7 +10,6 @@ import threading
 import time
 import traceback
 import tkinter as tk
-import tkinter.font as tkfont
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -47,7 +46,6 @@ class ExtractorApp:
         self.root.title("视频 PPT 抽取")
         self._size_for_screen()
         self.root.configure(bg="#f3f6fa")
-        self.font_family = self._choose_font()
         self.paths: list[Path] = []
         self.rows: dict[Path, str] = {}
         self.events: queue.Queue[tuple] = queue.Queue()
@@ -66,17 +64,6 @@ class ExtractorApp:
         self._build()
         self.root.after_idle(self._layout_settings)
         self.root.after(100, self._poll)
-
-    def _choose_font(self) -> str:
-        available = {name.casefold(): name for name in tkfont.families(self.root)}
-        if sys.platform == "darwin":
-            candidates = ("PingFang SC", "Heiti SC", "Arial Unicode MS", "Arial")
-        elif sys.platform == "win32":
-            candidates = ("Microsoft YaHei UI", "Microsoft YaHei", "Arial")
-        else:
-            candidates = ("Noto Sans CJK SC", "WenQuanYi Micro Hei", "DejaVu Sans")
-        return next((available[name.casefold()] for name in candidates
-                     if name.casefold() in available), next(iter(available.values()), "TkDefaultFont"))
 
     def _size_for_screen(self) -> None:
         """Choose a comfortable initial size while leaving room for taskbars."""
@@ -299,14 +286,7 @@ class ExtractorApp:
     def _open_output(self) -> None:
         folder = Path(self.output.get().strip()).expanduser()
         folder.mkdir(parents=True, exist_ok=True)
-        if sys.platform == "win32":
-            os.startfile(folder)
-        elif sys.platform == "darwin":
-            import subprocess
-            subprocess.Popen(["open", str(folder)])
-        else:
-            import subprocess
-            subprocess.Popen(["xdg-open", str(folder)])
+        os.startfile(folder)
 
     def _set_running(self, value: bool) -> None:
         self.running = value
