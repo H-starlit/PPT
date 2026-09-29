@@ -434,7 +434,9 @@ def main() -> int:
     _enable_windows_dpi_awareness()
     app = ExtractorApp()
     if len(sys.argv) == 2 and sys.argv[1] == "--smoke-gui":
-        app.root.after(1500, app.root.destroy)
+        app.root.update_idletasks()
+        app.root.destroy()
+        return 0
     app.run()
     return 0
 
