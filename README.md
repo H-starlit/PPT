@@ -56,10 +56,9 @@ git push origin v1.0.0
 
 在源码目录使用 64 位 Python 3.12 运行 `python scripts/打包便携版.py --replace`，即可更新 `发布包` 中的便携文件夹和 ZIP。打包脚本使用当前 Python 安装目录中的标准库，排除其全局安装的软件包；视频、提取结果和缓存不会进入压缩包。
 
-图形版使用 `python scripts/打包GUI.py` 按当前系统生成桌面程序：Windows 生成单文件 exe，macOS 生成 `.app` 应用包。在 macOS 本机打包前，需要 Python 3.12、Tk 支持和 Homebrew：
+图形版使用 `python scripts/打包GUI.py` 按当前系统生成桌面程序：Windows 生成单文件 exe，macOS 生成 `.app` 应用包。在 macOS 本机打包前，需要带 Tk 支持的 Python 3.12。Python.org 的 macOS 安装包包含 Tk；如果使用 Homebrew Python，请安装相应组件 `brew install python-tk@3.12`：
 
 ```bash
-brew install python@3.12 python-tk@3.12
 python3.12 -m pip install --target .builddeps -r requirements/build.txt -r requirements/macos-build.txt
 python3.12 -m pip install --target lib/python -r requirements/release.txt
 python3.12 scripts/准备macOS_FFmpeg.py

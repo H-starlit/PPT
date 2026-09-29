@@ -78,17 +78,24 @@ jobs:
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
-          gh release create $tag `
-            "发布包/GUI/视频PPT抽取.exe" `
-            "发布包/GUI/SHA256SUMS.txt" `
-            "发布包/GUI/LICENSE.txt" `
-            "发布包/GUI/THIRD_PARTY_LICENSES.md" `
-            "发布包/GUI/FFmpeg-LICENSE.txt" `
-            "发布包/GUI/FFmpeg-BUILD-README.txt" `
+          $assets = @(
+            "发布包/GUI/视频PPT抽取.exe"
+            "发布包/GUI/SHA256SUMS.txt"
+            "发布包/GUI/LICENSE.txt"
+            "发布包/GUI/THIRD_PARTY_LICENSES.md"
+            "发布包/GUI/FFmpeg-LICENSE.txt"
+            "发布包/GUI/FFmpeg-BUILD-README.txt"
+          )
+          gh release view $tag 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --clobber
+          } else {
+            gh release create $tag @assets `
             --title "视频PPT抽取 $tag" `
             --generate-notes `
             --verify-tag `
             --latest
+          }
 
   build-macos-app:
     needs: build-and-release
@@ -105,12 +112,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install Python with Tk support
+      - name: Set up Python with Tk support
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Check Tk and select Python
         shell: bash
         run: |
           test "$(uname -m)" = "${{ matrix.architecture }}"
-          brew install python@3.12 python-tk@3.12
-          echo "PYTHON_BIN=$(brew --prefix python@3.12)/bin/python3.12" >> "$GITHUB_ENV"
+          echo "PYTHON_BIN=$(command -v python)" >> "$GITHUB_ENV"
+          python -c "import tkinter; root=tkinter.Tk(); root.withdraw(); root.destroy()"
 
       - name: Install pinned dependencies
         shell: bash
@@ -118,7 +130,6 @@ jobs:
           "$PYTHON_BIN" -m pip install --upgrade pip
           "$PYTHON_BIN" -m pip install --target .builddeps -r requirements/build.txt -r requirements/macos-build.txt
           "$PYTHON_BIN" -m pip install --target lib/python -r requirements/release.txt
-          "$PYTHON_BIN" -c "import tkinter; root=tkinter.Tk(); root.withdraw(); root.destroy()"
 
       - name: Prepare macOS FFmpeg
         shell: bash
