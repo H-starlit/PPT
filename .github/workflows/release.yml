@@ -50,6 +50,14 @@ jobs:
       - name: Build GUI executable
         run: python "scripts/打包GUI.py"
 
+      - name: Smoke test GUI executable
+        shell: pwsh
+        run: |
+          $exe = Join-Path "发布包\GUI" "视频PPT抽取.exe"
+          if (-not (Test-Path $exe)) { throw "GUI executable was not built." }
+          $process = Start-Process -FilePath $exe -ArgumentList "--smoke-gui" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "GUI smoke test failed with exit code $($process.ExitCode)." }
+
       - name: Prepare release files and checksums
         shell: pwsh
         run: |

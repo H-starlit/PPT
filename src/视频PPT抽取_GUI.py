@@ -44,8 +44,7 @@ class ExtractorApp:
     def __init__(self) -> None:
         self.root = TkinterDnD.Tk()
         self.root.title("视频 PPT 抽取")
-        self.root.geometry("940x700")
-        self.root.minsize(720, 570)
+        self._size_for_screen()
         self.root.configure(bg="#f3f6fa")
         self.paths: list[Path] = []
         self.rows: dict[Path, str] = {}
@@ -60,26 +59,52 @@ class ExtractorApp:
         self.summary = tk.StringVar(value="拖入视频，或点击“添加视频”")
         self.eta = tk.StringVar(value="")
         self.progress_value = tk.DoubleVar(value=0)
+        self.setting_cells: list[tk.Frame] = []
+        self._settings_layout_after: str | None = None
         self._build()
+        self.root.after_idle(self._layout_settings)
         self.root.after(100, self._poll)
+
+    def _size_for_screen(self) -> None:
+        """Choose a comfortable initial size while leaving room for taskbars."""
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        min_width = min(620, max(420, screen_width - 32))
+        min_height = min(500, max(360, screen_height - 96))
+        width = min(screen_width - 32, 1040, max(min_width, int(screen_width * .82)))
+        height = min(screen_height - 64, 760, max(min_height, int(screen_height * .86)))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min_width, min_height)
+
+        # Tk fonts use points while its geometry uses pixels. Sync them to the
+        # monitor DPI so Windows scaling keeps text crisp and controls readable.
+        try:
+            dpi = self.root.winfo_fpixels("1i")
+            self.root.tk.call("tk", "scaling", dpi / 72.0)
+        except (tk.TclError, ZeroDivisionError):
+            pass
 
     def _build(self) -> None:
         style = ttk.Style(self.root)
         if "vista" in style.theme_names():
             style.theme_use("vista")
-        style.configure("Treeview", rowheight=30, font=("Microsoft YaHei UI", 10),
+        style.configure("TButton", padding=(11, 6), font=("Microsoft YaHei UI", 9))
+        style.configure("TEntry", padding=(6, 5), font=("Microsoft YaHei UI", 9))
+        style.configure("Treeview", rowheight=29, font=("Microsoft YaHei UI", 9),
                         background="#ffffff", fieldbackground="#ffffff", foreground="#25364a")
         style.configure("Treeview.Heading", font=("Microsoft YaHei UI", 9, "bold"),
                         background="#edf2f8", foreground="#43566d", padding=(8, 7))
         style.configure("Horizontal.TProgressbar", troughcolor="#e3eaf2", background="#3978c5",
                         bordercolor="#e3eaf2", lightcolor="#3978c5", darkcolor="#3978c5")
 
-        outer = tk.Frame(self.root, bg="#f3f6fa", padx=24, pady=20)
+        outer = tk.Frame(self.root, bg="#f3f6fa", padx=20, pady=15)
         outer.pack(fill="both", expand=True)
         tk.Label(outer, text="视频 PPT 抽取", bg="#f3f6fa", fg="#1b304b",
                  font=("Microsoft YaHei UI", 21, "bold")).pack(anchor="w")
         tk.Label(outer, text="导入视频，自动筛选画面并分别生成 PDF",
-                 bg="#f3f6fa", fg="#65758a", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(3, 17))
+                 bg="#f3f6fa", fg="#65758a", font=("Microsoft YaHei UI", 10)).pack(anchor="w", pady=(3, 12))
 
         buttons = tk.Frame(outer, bg="#f3f6fa")
         buttons.pack(fill="x", pady=(0, 10))
@@ -100,22 +125,25 @@ class ExtractorApp:
             target.drop_target_register(DND_FILES)
             target.dnd_bind("<<Drop>>", self._drop)
 
+        table_wrap = tk.Frame(outer, bg="#ffffff", highlightbackground="#dce4ee", highlightthickness=1)
+        table_wrap.pack(fill="both", expand=True)
         columns = ("name", "folder", "status")
-        self.table = ttk.Treeview(outer, columns=columns, show="headings", selectmode="extended")
+        self.table = ttk.Treeview(table_wrap, columns=columns, show="headings", selectmode="extended")
         self.table.heading("name", text="视频文件")
         self.table.heading("folder", text="所在文件夹")
         self.table.heading("status", text="状态")
-        self.table.column("name", width=220, minwidth=150)
-        self.table.column("folder", width=390, minwidth=180)
-        self.table.column("status", width=170, minwidth=110)
-        table_wrap = tk.Frame(outer, bg="#ffffff", highlightbackground="#dce4ee", highlightthickness=1)
-        table_wrap.pack(fill="both", expand=True)
-        scrollbar = ttk.Scrollbar(table_wrap, orient="vertical", command=self.table.yview)
-        self.table.configure(yscrollcommand=scrollbar.set)
+        self.table.column("name", width=250, minwidth=110, stretch=True)
+        self.table.column("folder", width=430, minwidth=130, stretch=True)
+        self.table.column("status", width=170, minwidth=90, stretch=True)
+        y_scrollbar = ttk.Scrollbar(table_wrap, orient="vertical", command=self.table.yview)
+        x_scrollbar = ttk.Scrollbar(table_wrap, orient="horizontal", command=self.table.xview)
+        self.table.configure(yscrollcommand=y_scrollbar.set, xscrollcommand=x_scrollbar.set)
+        y_scrollbar.pack(side="right", fill="y", pady=1)
+        x_scrollbar.pack(side="bottom", fill="x", padx=1)
         self.table.pack(side="left", fill="both", expand=True, padx=(1, 0), pady=1)
-        scrollbar.pack(side="right", fill="y", pady=1)
         self.table.drop_target_register(DND_FILES)
         self.table.dnd_bind("<<Drop>>", self._drop)
+        self.table.bind("<Configure>", self._resize_table_columns, add="+")
 
         output_row = tk.Frame(outer, bg="#f3f6fa")
         output_row.pack(fill="x", pady=(14, 5))
@@ -134,23 +162,19 @@ class ExtractorApp:
             ("重复合并阈值", self.duplicate, "越大去重越强"),
             ("最少稳定帧数", self.stable, "越大越少保留短暂画面"),
         ]
-        for column, (label, variable, tip) in enumerate(fields):
+        for label, variable, tip in fields:
             cell = tk.Frame(settings, bg="#f3f6fa")
-            cell.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 8))
+            self.setting_cells.append(cell)
             tk.Label(cell, text=label, bg="#f3f6fa", fg="#30445d",
                      font=("Microsoft YaHei UI", 9)).pack(anchor="w")
-            entry = ttk.Entry(cell, textvariable=variable, width=8)
+            entry = ttk.Entry(cell, textvariable=variable, width=9)
             entry.pack(anchor="w", pady=(3, 0))
             tk.Label(cell, text=tip, bg="#f3f6fa", fg="#7a899b",
                      font=("Microsoft YaHei UI", 8)).pack(anchor="w")
-            settings.columnconfigure(column, weight=1)
         self.face_check = ttk.Checkbutton(settings, text="启用人脸识别（过滤有人像的画面）",
                                           variable=self.face_detection)
-        self.face_check.grid(row=0, column=len(fields), columnspan=2,
-                             padx=(6, 4), pady=(2, 7), sticky="w")
         self.reset_button = ttk.Button(settings, text="恢复默认值", command=self._reset_settings)
-        self.reset_button.grid(row=1, column=len(fields), columnspan=2,
-                               padx=(6, 4), sticky="w")
+        settings.bind("<Configure>", self._schedule_settings_layout, add="+")
         self.setting_entries = [child for child in settings.winfo_children()]
 
         bottom = tk.Frame(outer, bg="#f3f6fa")
@@ -168,6 +192,41 @@ class ExtractorApp:
         self.progressbar.pack(side="left", fill="x", expand=True, padx=(0, 14))
         tk.Label(progress_row, textvariable=self.eta, bg="#f3f6fa", fg="#65758a",
                  font=("Microsoft YaHei UI", 9), width=25, anchor="e").pack(side="right")
+
+    def _schedule_settings_layout(self, _event=None) -> None:
+        if self._settings_layout_after is not None:
+            self.root.after_cancel(self._settings_layout_after)
+        self._settings_layout_after = self.root.after(80, self._layout_settings)
+
+    def _layout_settings(self) -> None:
+        self._settings_layout_after = None
+        width = self.face_check.master.winfo_width()
+        columns = 4 if width >= 900 else 2 if width >= 560 else 1
+        for column in range(4):
+            self.face_check.master.columnconfigure(column, weight=1 if column < columns else 0,
+                                                   uniform="setting" if column < columns else "")
+        for index, cell in enumerate(self.setting_cells):
+            cell.grid(row=index // columns, column=index % columns, sticky="ew",
+                      padx=(0 if index % columns == 0 else 8, 8), pady=4)
+
+        control_row = (len(self.setting_cells) + columns - 1) // columns
+        if columns == 1:
+            self.face_check.grid(row=control_row, column=0, sticky="w", pady=(8, 4))
+            self.reset_button.grid(row=control_row + 1, column=0, sticky="w", pady=(2, 4))
+        else:
+            self.face_check.grid(row=control_row, column=0, columnspan=columns - 1,
+                                 sticky="w", pady=(8, 4))
+            self.reset_button.grid(row=control_row, column=columns - 1,
+                                   sticky="e", pady=(8, 4))
+
+    def _resize_table_columns(self, event) -> None:
+        width = max(340, event.width - 20)
+        name_width = max(110, int(width * .30))
+        folder_width = max(130, int(width * .47))
+        status_width = max(90, width - name_width - folder_width)
+        self.table.column("name", width=name_width)
+        self.table.column("folder", width=folder_width)
+        self.table.column("status", width=status_width)
 
     def _reset_settings(self) -> None:
         self.interval.set(DEFAULT_SETTINGS["interval"])
@@ -362,11 +421,31 @@ def main() -> int:
             output.mkdir(parents=True, exist_ok=True)
             (output / "selftest_error.txt").write_text(traceback.format_exc(), encoding="utf-8")
             return 1
+    _enable_windows_dpi_awareness()
     app = ExtractorApp()
     if len(sys.argv) == 2 and sys.argv[1] == "--smoke-gui":
         app.root.after(1500, app.root.destroy)
     app.run()
     return 0
+
+
+def _enable_windows_dpi_awareness() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        # PER_MONITOR_AWARE_V2; ignore E_ACCESSDENIED if a manifest already set it.
+        if ctypes.windll.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except (AttributeError, OSError):
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except (AttributeError, OSError):
+                pass
 
 
 if __name__ == "__main__":
